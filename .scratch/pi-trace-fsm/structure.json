@@ -1,0 +1,83 @@
+{
+  "feature": "pi-trace-fsm",
+  "status": "confirmed",
+  "pattern": "functional composition in a standalone pi package",
+  "observed": [
+    {
+      "path": ".",
+      "role": "new plugin root",
+      "evidence": "The requested target directory did not exist and is being created as an isolated package."
+    }
+  ],
+  "proposed": [
+    {
+      "path": "index.ts",
+      "role": "pi extension entry point",
+      "reason": "Owns lifecycle hooks, passive warnings, prompt context, and slash commands."
+    },
+    {
+      "path": "fsm.ts",
+      "role": "pure trace extraction and FSM model",
+      "reason": "Keeps the paper-derived algorithm deterministic and independently testable."
+    },
+    {
+      "path": "store.ts",
+      "role": "compact per-project persistence",
+      "reason": "Stores activity-only traces without copying conversation content."
+    },
+    {
+      "path": "tests/fsm.test.ts",
+      "role": "behavior tests",
+      "reason": "Verifies extraction, transition filtering, replay, prediction, and risk metrics at the pure public seam."
+    },
+    {
+      "path": "scripts/smoke.ts",
+      "role": "extension smoke check",
+      "reason": "Exercises the pure model with a runnable command without requiring an interactive pi process."
+    },
+    {
+      "path": "README.md",
+      "role": "usage and design documentation",
+      "reason": "Documents loading, commands, storage, and the warning-only boundary."
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "index.ts",
+      "to": "fsm.ts",
+      "reason": "The extension feeds observed activities into the pure model and formatter."
+    },
+    {
+      "from": "index.ts",
+      "to": "store.ts",
+      "reason": "The extension loads and persists compact per-project traces."
+    },
+    {
+      "from": "store.ts",
+      "to": "node:fs",
+      "reason": "Persistence uses Node's standard filesystem APIs."
+    },
+    {
+      "from": "tests/fsm.test.ts",
+      "to": "fsm.ts",
+      "reason": "Tests call the deterministic model seam directly."
+    }
+  ],
+  "seams": {
+    "public": [
+      "Pi extension factory exported by index.ts",
+      "/fsm-status, /fsm-next, /fsm-mark, and /fsm-rebuild commands",
+      "buildModel(), replayTrace(), predictNext(), and inspectTrace() from fsm.ts"
+    ],
+    "test": [
+      "extractHistoricalTraces() with session-shaped entries",
+      "buildModel() with synthetic traces",
+      "TraceStore load/append/label/replace behavior"
+    ]
+  },
+  "confirmation": {
+    "status": "confirmed",
+    "confirmedBy": "user request to create the plugin",
+    "confirmedAt": "2026-08-28T15:45:18+03:00"
+  }
+}

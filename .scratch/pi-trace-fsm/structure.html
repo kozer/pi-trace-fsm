@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repository structure — pi-trace-fsm</title>
+<style>
+:root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #172033; }
+body { margin: 0; background: #f5f5f4; }
+main { max-width: 1180px; margin: auto; padding: 2.5rem 1.25rem; }
+h1 { margin: 0 0 .25rem; }
+h2 { margin-top: 2rem; }
+header, .panel, .change-card, .context-card { background: white; border: 1px solid #d6d3d1; border-radius: 14px; padding: 1.2rem; box-shadow: 0 4px 18px #0000000c; }
+.change-panel { border-color: #93c5fd; }
+.change-card { border-left: 5px solid #2563eb; }
+.change-file { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.change-tag { border-radius: 999px; background: #dbeafe; color: #1e40af; padding: .15rem .5rem; font-size: .75rem; font-weight: 700; text-transform: uppercase; }
+.change-card p, .context-card p { margin: .65rem 0 0; color: #57534e; }
+.context-card { padding: .9rem 1rem; }
+.context-card code, .change-card code { font: .9rem ui-monospace, monospace; color: #1d4ed8; word-break: break-word; }
+header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.badges { display: flex; gap: .45rem; flex-wrap: wrap; }
+.badge { border-radius: 999px; padding: .18rem .6rem; font-size: .8rem; font-weight: 700; background: #e7e5e4; color: #44403c; }
+.badge.confirmed { background: #d1fae5; color: #065f46; }
+.stats, .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; margin-top: 1rem; }
+.stat strong { display: block; font-size: 1.7rem; }
+.dependency code { font: .9rem ui-monospace, monospace; color: #1d4ed8; word-break: break-word; }
+ul { margin: .4rem 0; padding-left: 1.25rem; }
+.path-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .8rem; }
+.dependency { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) minmax(150px, 1.5fr); align-items: center; gap: .6rem; padding: .7rem; border: 1px solid #e7e5e4; border-radius: 10px; list-style: none; }
+.arrow { font-size: 1.25rem; color: #7c3aed; }
+.dependency-reason { color: #57534e; }
+.seam-list { margin: 0; }
+.seam-list li { overflow-wrap: anywhere; word-break: break-word; }
+.help { color: #57534e; margin-top: .35rem; }
+.empty { color: #78716c; }
+details { margin-top: 1.5rem; }
+summary { cursor: pointer; font-weight: 700; }
+pre { overflow: auto; background: #1c1917; color: #f5f5f4; border-radius: 10px; padding: 1rem; }
+@media (max-width: 700px) { .dependency { grid-template-columns: 1fr; } .arrow { transform: rotate(90deg); } }
+</style></head><body><main>
+<header><div><h1>Repository structure</h1><p><b>Feature:</b> pi-trace-fsm<br><b>Pattern:</b> functional composition in a standalone pi package</p></div><div class="badges"><span class="badge confirmed">confirmed</span><span class="badge">derived view</span></div></header>
+<section class="stats"><div class="panel stat"><strong>1</strong>Existing context</div><div class="panel stat"><strong>6</strong>Files to change</div><div class="panel stat"><strong>4</strong>Dependencies</div><div class="panel stat"><strong>6</strong>Public/test seams</div></section>
+<section class="panel"><h2>Confirmation</h2><p>Confirmed by user request to create the plugin on 2026-08-28T15:45:18+03:00</p></section>
+<section class="panel change-panel"><h2>Files to change</h2><p>Proposed paths only. Each card states what is new and why.</p><div class="path-grid">
+<article class="change-card">
+  <div class="change-file"><code>index.ts</code><span class="change-tag">change</span></div>
+  <p><b>New:</b> pi extension entry point</p>
+  <p><b>Why:</b> Owns lifecycle hooks, passive warnings, prompt context, and slash commands.</p>
+</article>
+<article class="change-card">
+  <div class="change-file"><code>fsm.ts</code><span class="change-tag">change</span></div>
+  <p><b>New:</b> pure trace extraction and FSM model</p>
+  <p><b>Why:</b> Keeps the paper-derived algorithm deterministic and independently testable.</p>
+</article>
+<article class="change-card">
+  <div class="change-file"><code>store.ts</code><span class="change-tag">change</span></div>
+  <p><b>New:</b> compact per-project persistence</p>
+  <p><b>Why:</b> Stores activity-only traces without copying conversation content.</p>
+</article>
+<article class="change-card">
+  <div class="change-file"><code>tests/fsm.test.ts</code><span class="change-tag">change</span></div>
+  <p><b>New:</b> behavior tests</p>
+  <p><b>Why:</b> Verifies extraction, transition filtering, replay, prediction, and risk metrics at the pure public seam.</p>
+</article>
+<article class="change-card">
+  <div class="change-file"><code>scripts/smoke.ts</code><span class="change-tag">change</span></div>
+  <p><b>New:</b> extension smoke check</p>
+  <p><b>Why:</b> Exercises the pure model with a runnable command without requiring an interactive pi process.</p>
+</article>
+<article class="change-card">
+  <div class="change-file"><code>README.md</code><span class="change-tag">change</span></div>
+  <p><b>New:</b> usage and design documentation</p>
+  <p><b>Why:</b> Documents loading, commands, storage, and the warning-only boundary.</p>
+</article></div></section>
+<details class="panel"><summary>Existing context (1 inspected paths)</summary><p class="help">Inspected files/folders used as evidence. They are not change requests.</p><div class="path-grid">
+<article class="context-card">
+  <code>.</code>
+  <p><b>Role:</b> new plugin root</p>
+  <p><b>Evidence:</b> The requested target directory did not exist and is being created as an isolated package.</p>
+</article></div></details>
+<section class="columns"><div class="panel"><h2>Dependencies</h2><ul>
+<li class="dependency">
+  <code>index.ts</code>
+  <span class="arrow" aria-hidden="true">→</span>
+  <code>fsm.ts</code>
+  <span class="dependency-reason">The extension feeds observed activities into the pure model and formatter.</span>
+</li>
+<li class="dependency">
+  <code>index.ts</code>
+  <span class="arrow" aria-hidden="true">→</span>
+  <code>store.ts</code>
+  <span class="dependency-reason">The extension loads and persists compact per-project traces.</span>
+</li>
+<li class="dependency">
+  <code>store.ts</code>
+  <span class="arrow" aria-hidden="true">→</span>
+  <code>node:fs</code>
+  <span class="dependency-reason">Persistence uses Node&#x27;s standard filesystem APIs.</span>
+</li>
+<li class="dependency">
+  <code>tests/fsm.test.ts</code>
+  <span class="arrow" aria-hidden="true">→</span>
+  <code>fsm.ts</code>
+  <span class="dependency-reason">Tests call the deterministic model seam directly.</span>
+</li></ul></div><div class="panel"><h2>Public seams</h2><ul class="seam-list"><li>Pi extension factory exported by index.ts</li><li>/fsm-status, /fsm-next, /fsm-mark, and /fsm-rebuild commands</li><li>buildModel(), replayTrace(), predictNext(), and inspectTrace() from fsm.ts</li></ul><h2>Test seams</h2><ul class="seam-list"><li>extractHistoricalTraces() with session-shaped entries</li><li>buildModel() with synthetic traces</li><li>TraceStore load/append/label/replace behavior</li></ul></div></section>
+<details><summary>Canonical JSON (read-only view)</summary><pre>{
+  &quot;feature&quot;: &quot;pi-trace-fsm&quot;,
+  &quot;status&quot;: &quot;confirmed&quot;,
+  &quot;pattern&quot;: &quot;functional composition in a standalone pi package&quot;,
+  &quot;observed&quot;: [
+    {
+      &quot;path&quot;: &quot;.&quot;,
+      &quot;role&quot;: &quot;new plugin root&quot;,
+      &quot;evidence&quot;: &quot;The requested target directory did not exist and is being created as an isolated package.&quot;
+    }
+  ],
+  &quot;proposed&quot;: [
+    {
+      &quot;path&quot;: &quot;index.ts&quot;,
+      &quot;role&quot;: &quot;pi extension entry point&quot;,
+      &quot;reason&quot;: &quot;Owns lifecycle hooks, passive warnings, prompt context, and slash commands.&quot;
+    },
+    {
+      &quot;path&quot;: &quot;fsm.ts&quot;,
+      &quot;role&quot;: &quot;pure trace extraction and FSM model&quot;,
+      &quot;reason&quot;: &quot;Keeps the paper-derived algorithm deterministic and independently testable.&quot;
+    },
+    {
+      &quot;path&quot;: &quot;store.ts&quot;,
+      &quot;role&quot;: &quot;compact per-project persistence&quot;,
+      &quot;reason&quot;: &quot;Stores activity-only traces without copying conversation content.&quot;
+    },
+    {
+      &quot;path&quot;: &quot;tests/fsm.test.ts&quot;,
+      &quot;role&quot;: &quot;behavior tests&quot;,
+      &quot;reason&quot;: &quot;Verifies extraction, transition filtering, replay, prediction, and risk metrics at the pure public seam.&quot;
+    },
+    {
+      &quot;path&quot;: &quot;scripts/smoke.ts&quot;,
+      &quot;role&quot;: &quot;extension smoke check&quot;,
+      &quot;reason&quot;: &quot;Exercises the pure model with a runnable command without requiring an interactive pi process.&quot;
+    },
+    {
+      &quot;path&quot;: &quot;README.md&quot;,
+      &quot;role&quot;: &quot;usage and design documentation&quot;,
+      &quot;reason&quot;: &quot;Documents loading, commands, storage, and the warning-only boundary.&quot;
+    }
+  ],
+  &quot;dependencies&quot;: [
+    {
+      &quot;from&quot;: &quot;index.ts&quot;,
+      &quot;to&quot;: &quot;fsm.ts&quot;,
+      &quot;reason&quot;: &quot;The extension feeds observed activities into the pure model and formatter.&quot;
+    },
+    {
+      &quot;from&quot;: &quot;index.ts&quot;,
+      &quot;to&quot;: &quot;store.ts&quot;,
+      &quot;reason&quot;: &quot;The extension loads and persists compact per-project traces.&quot;
+    },
+    {
+      &quot;from&quot;: &quot;store.ts&quot;,
+      &quot;to&quot;: &quot;node:fs&quot;,
+      &quot;reason&quot;: &quot;Persistence uses Node&#x27;s standard filesystem APIs.&quot;
+    },
+    {
+      &quot;from&quot;: &quot;tests/fsm.test.ts&quot;,
+      &quot;to&quot;: &quot;fsm.ts&quot;,
+      &quot;reason&quot;: &quot;Tests call the deterministic model seam directly.&quot;
+    }
+  ],
+  &quot;seams&quot;: {
+    &quot;public&quot;: [
+      &quot;Pi extension factory exported by index.ts&quot;,
+      &quot;/fsm-status, /fsm-next, /fsm-mark, and /fsm-rebuild commands&quot;,
+      &quot;buildModel(), replayTrace(), predictNext(), and inspectTrace() from fsm.ts&quot;
+    ],
+    &quot;test&quot;: [
+      &quot;extractHistoricalTraces() with session-shaped entries&quot;,
+      &quot;buildModel() with synthetic traces&quot;,
+      &quot;TraceStore load/append/label/replace behavior&quot;
+    ]
+  },
+  &quot;confirmation&quot;: {
+    &quot;status&quot;: &quot;confirmed&quot;,
+    &quot;confirmedBy&quot;: &quot;user request to create the plugin&quot;,
+    &quot;confirmedAt&quot;: &quot;2026-08-28T15:45:18+03:00&quot;
+  }
+}</pre></details>
+</main></body></html>
