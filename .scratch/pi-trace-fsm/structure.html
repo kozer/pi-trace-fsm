@@ -38,7 +38,7 @@ pre { overflow: auto; background: #1c1917; color: #f5f5f4; border-radius: 10px; 
 </style></head><body><main>
 <header><div><h1>Repository structure</h1><p><b>Feature:</b> pi-trace-fsm<br><b>Pattern:</b> functional composition in a standalone pi package</p></div><div class="badges"><span class="badge confirmed">confirmed</span><span class="badge">derived view</span></div></header>
 <section class="stats"><div class="panel stat"><strong>1</strong>Existing context</div><div class="panel stat"><strong>6</strong>Files to change</div><div class="panel stat"><strong>4</strong>Dependencies</div><div class="panel stat"><strong>6</strong>Public/test seams</div></section>
-<section class="panel"><h2>Confirmation</h2><p>Confirmed by user request to create the plugin on 2026-08-28T15:45:18+03:00</p></section>
+<section class="panel"><h2>Confirmation</h2><p>Confirmed by user selection of full runtime, passive paper-aligned scope on 2026-08-28T18:53:06+03:00</p></section>
 <section class="panel change-panel"><h2>Files to change</h2><p>Proposed paths only. Each card states what is new and why.</p><div class="path-grid">
 <article class="change-card">
   <div class="change-file"><code>index.ts</code><span class="change-tag">change</span></div>
@@ -48,7 +48,7 @@ pre { overflow: auto; background: #1c1917; color: #f5f5f4; border-radius: 10px; 
 <article class="change-card">
   <div class="change-file"><code>fsm.ts</code><span class="change-tag">change</span></div>
   <p><b>New:</b> pure trace extraction and FSM model</p>
-  <p><b>Why:</b> Keeps the paper-derived algorithm deterministic and independently testable.</p>
+  <p><b>Why:</b> Keeps the paper-derived construction, prediction context, continuations, evaluation, and monitor deterministic and independently testable.</p>
 </article>
 <article class="change-card">
   <div class="change-file"><code>store.ts</code><span class="change-tag">change</span></div>
@@ -58,12 +58,12 @@ pre { overflow: auto; background: #1c1917; color: #f5f5f4; border-radius: 10px; 
 <article class="change-card">
   <div class="change-file"><code>tests/fsm.test.ts</code><span class="change-tag">change</span></div>
   <p><b>New:</b> behavior tests</p>
-  <p><b>Why:</b> Verifies extraction, transition filtering, replay, prediction, and risk metrics at the pure public seam.</p>
+  <p><b>Why:</b> Verifies extraction, transition filtering, smoothed prediction, continuations, replay, evaluation, and risk metrics at the pure public seam.</p>
 </article>
 <article class="change-card">
   <div class="change-file"><code>scripts/smoke.ts</code><span class="change-tag">change</span></div>
   <p><b>New:</b> extension smoke check</p>
-  <p><b>Why:</b> Exercises the pure model with a runnable command without requiring an interactive pi process.</p>
+  <p><b>Why:</b> Exercises the pure model, paper-style context, continuations, and evaluation with a runnable command without requiring an interactive pi process.</p>
 </article>
 <article class="change-card">
   <div class="change-file"><code>README.md</code><span class="change-tag">change</span></div>
@@ -100,7 +100,7 @@ pre { overflow: auto; background: #1c1917; color: #f5f5f4; border-radius: 10px; 
   <span class="arrow" aria-hidden="true">→</span>
   <code>fsm.ts</code>
   <span class="dependency-reason">Tests call the deterministic model seam directly.</span>
-</li></ul></div><div class="panel"><h2>Public seams</h2><ul class="seam-list"><li>Pi extension factory exported by index.ts</li><li>/fsm-status, /fsm-next, /fsm-mark, and /fsm-rebuild commands</li><li>buildModel(), replayTrace(), predictNext(), and inspectTrace() from fsm.ts</li></ul><h2>Test seams</h2><ul class="seam-list"><li>extractHistoricalTraces() with session-shaped entries</li><li>buildModel() with synthetic traces</li><li>TraceStore load/append/label/replace behavior</li></ul></div></section>
+</li></ul></div><div class="panel"><h2>Public seams</h2><ul class="seam-list"><li>Pi extension factory exported by index.ts</li><li>/fsm-status, /fsm-next, /fsm-evaluate, /fsm-mark, and /fsm-rebuild commands</li><li>buildModel(), predictNext(), continuationsFrom(), replayTrace(), inspectTrace(), and evaluateLabeledTraces() from fsm.ts</li></ul><h2>Test seams</h2><ul class="seam-list"><li>extractHistoricalTraces() with session-shaped entries</li><li>buildModel(), predictNext(), continuationsFrom(), and evaluateLabeledTraces() with synthetic traces</li><li>TraceStore load/append/label/replace behavior</li></ul></div></section>
 <details><summary>Canonical JSON (read-only view)</summary><pre>{
   &quot;feature&quot;: &quot;pi-trace-fsm&quot;,
   &quot;status&quot;: &quot;confirmed&quot;,
@@ -121,7 +121,7 @@ pre { overflow: auto; background: #1c1917; color: #f5f5f4; border-radius: 10px; 
     {
       &quot;path&quot;: &quot;fsm.ts&quot;,
       &quot;role&quot;: &quot;pure trace extraction and FSM model&quot;,
-      &quot;reason&quot;: &quot;Keeps the paper-derived algorithm deterministic and independently testable.&quot;
+      &quot;reason&quot;: &quot;Keeps the paper-derived construction, prediction context, continuations, evaluation, and monitor deterministic and independently testable.&quot;
     },
     {
       &quot;path&quot;: &quot;store.ts&quot;,
@@ -131,12 +131,12 @@ pre { overflow: auto; background: #1c1917; color: #f5f5f4; border-radius: 10px; 
     {
       &quot;path&quot;: &quot;tests/fsm.test.ts&quot;,
       &quot;role&quot;: &quot;behavior tests&quot;,
-      &quot;reason&quot;: &quot;Verifies extraction, transition filtering, replay, prediction, and risk metrics at the pure public seam.&quot;
+      &quot;reason&quot;: &quot;Verifies extraction, transition filtering, smoothed prediction, continuations, replay, evaluation, and risk metrics at the pure public seam.&quot;
     },
     {
       &quot;path&quot;: &quot;scripts/smoke.ts&quot;,
       &quot;role&quot;: &quot;extension smoke check&quot;,
-      &quot;reason&quot;: &quot;Exercises the pure model with a runnable command without requiring an interactive pi process.&quot;
+      &quot;reason&quot;: &quot;Exercises the pure model, paper-style context, continuations, and evaluation with a runnable command without requiring an interactive pi process.&quot;
     },
     {
       &quot;path&quot;: &quot;README.md&quot;,
@@ -169,19 +169,19 @@ pre { overflow: auto; background: #1c1917; color: #f5f5f4; border-radius: 10px; 
   &quot;seams&quot;: {
     &quot;public&quot;: [
       &quot;Pi extension factory exported by index.ts&quot;,
-      &quot;/fsm-status, /fsm-next, /fsm-mark, and /fsm-rebuild commands&quot;,
-      &quot;buildModel(), replayTrace(), predictNext(), and inspectTrace() from fsm.ts&quot;
+      &quot;/fsm-status, /fsm-next, /fsm-evaluate, /fsm-mark, and /fsm-rebuild commands&quot;,
+      &quot;buildModel(), predictNext(), continuationsFrom(), replayTrace(), inspectTrace(), and evaluateLabeledTraces() from fsm.ts&quot;
     ],
     &quot;test&quot;: [
       &quot;extractHistoricalTraces() with session-shaped entries&quot;,
-      &quot;buildModel() with synthetic traces&quot;,
+      &quot;buildModel(), predictNext(), continuationsFrom(), and evaluateLabeledTraces() with synthetic traces&quot;,
       &quot;TraceStore load/append/label/replace behavior&quot;
     ]
   },
   &quot;confirmation&quot;: {
     &quot;status&quot;: &quot;confirmed&quot;,
-    &quot;confirmedBy&quot;: &quot;user request to create the plugin&quot;,
-    &quot;confirmedAt&quot;: &quot;2026-08-28T15:45:18+03:00&quot;
+    &quot;confirmedBy&quot;: &quot;user selection of full runtime, passive paper-aligned scope&quot;,
+    &quot;confirmedAt&quot;: &quot;2026-08-28T18:53:06+03:00&quot;
   }
 }</pre></details>
 </main></body></html>

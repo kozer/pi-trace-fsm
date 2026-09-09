@@ -19,11 +19,14 @@ repetitive paths without an ML dependency.
 ## Desired Behavior
 
 A standalone Pi package named `pi-trace-fsm` shall collect activity-only traces
-per project, build a deterministic last-activity FSM, expose inspection commands,
-inject a small optional next-action hint, and emit passive warnings for novel
-transitions and excessive repeated activity. With sufficient manual labels, it
-also computes calibrated passive risk signals and a local failure-risk score. It
-shall never block or terminate a tool call.
+per project and implement the paper's complete passive runtime surface: a
+deterministic last-activity FSM, additive-smoothed next-step probabilities,
+top-15 multi-step continuations, replay and held-out evaluation, structural
+failure features, and calibrated runtime monitoring. It shall inject the
+minimal FSM context into the next model prompt and emit explainable passive
+warnings for novel transitions, cycles, and surprising prefixes. It shall
+never block a tool call, terminate a run, or claim paper benchmark results
+without local evaluation evidence.
 
 ## Domain Language
 
@@ -35,8 +38,13 @@ shall never block or terminate a tool call.
 - **Outcome:** `success`, `failure`, or `unknown`; new traces default to
   `unknown` and can be manually labeled.
 - **Novel transition:** a proposed edge absent from the filtered FSM.
+- **Smoothed next-step probability:** the paper's additive-smoothed estimate
+  `P(a|q) = (C(q,a) + α) / Σa'(C(q,a') + α|A|)` over the training alphabet.
+- **Continuation:** a deterministic multi-activity path beginning after an FSM
+  state, ranked by observed path count and rendered in the minimal context
+  format used by the paper.
 - **Cycle rate:** repeated activity occurrences divided by activity count; this
-  is an explicit local heuristic, not a paper reproduction claim.
+  is an explicit local heuristic, not a paper benchmark operating point.
 
 ## Repository Structure
 
@@ -70,9 +78,11 @@ session file.
 
 ## Public Test Seam
 
-Pure functions in `fsm.ts` are the primary seam. The extension factory and
-commands are covered by typecheck and a separate smoke script; no TUI harness is
-needed for the first slice.
+Pure functions in `fsm.ts` are the primary seam: model construction,
+smoothed prediction, continuation extraction, replay, feature scoring,
+calibration, and deterministic evaluation. The extension factory and commands
+are covered by typecheck and a separate smoke script; no TUI harness is
+needed.
 
 ## Acceptance Criteria
 
@@ -80,15 +90,23 @@ needed for the first slice.
    ignoring tool-result content and extension custom entries.
 2. `buildModel()` has at most one successor per `(state, activity)` pair and
    applies the paper's exact rare-transition rule.
-3. `replayTrace()` reports consumed and novel transitions, and
-   `predictNext()` returns deterministic probability-ranked successors.
-4. `TraceStore` persists only compact trace records, tolerates malformed lines,
+3. `predictNext()` implements additive smoothing over the model alphabet and
+   returns deterministic probability-ranked successors; `continuationsFrom()`
+   returns deterministic top-15 multi-step paths with observed counts.
+4. `replayTrace()` and the evaluator report consumed/novel transitions,
+   smoothed next-step cross-entropy, replay fitness, and prefix checkpoints on
+   a disjoint deterministic holdout split.
+5. `TraceStore` persists only compact trace records, tolerates malformed lines,
    supports labels, and replaces a rebuilt snapshot atomically.
-5. The extension registers `/fsm-status`, `/fsm-next`, `/fsm-mark`, and
-   `/fsm-rebuild`.
-6. The extension collects current activities through public Pi hooks, injects a
-   small hint only after the minimum trace count, and never blocks `tool_call`.
-7. Focused tests, typecheck, and the smoke script pass.
+6. The extension registers `/fsm-status`, `/fsm-next`, `/fsm-evaluate`,
+   `/fsm-mark`, and `/fsm-rebuild`, and renders the paper's minimal FSM context
+   with probabilities plus top-15 continuations.
+7. Structural feature extraction and the passive monitor remain available for
+   live prefixes; cycle, surprise, and five-step stuck-state warnings name the
+   rule, observed value, threshold, and FSM state.
+8. The extension collects current activities through public Pi hooks and never
+   blocks `tool_call` or terminates a run.
+9. Focused tests, typecheck, and the smoke script pass.
 
 ## Risks and Unknowns
 
@@ -109,10 +127,13 @@ needed for the first slice.
 
 ## Scope Cuts
 
-The first slice omits higher-order PPM and benchmark reproduction. Those
-remain separate measurement work. The follow-up layer uses the local labels and
-compact features already collected; it does not reproduce the paper's full
-benchmark classifier pipeline.
+This target is the complete passive runtime implementation, not a reproduction
+of the paper's external benchmark tables. It omits external dataset loaders,
+RPNI/EDSM/Alergia/k-Tails/process-mining baselines, and paper-scale neural or
+gradient-boosted benchmark training. Higher-order PPM remains optional
+research work because the paper's winning LLM context uses first-order
+probabilities plus observed continuations. The runtime stays warning-only:
+the paper's automatic early-stop action is deliberately not enabled in Pi.
 
 ## Evidence
 

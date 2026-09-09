@@ -7,6 +7,7 @@ import {
 	START_STATE,
 	buildModel,
 	calibrateMonitor,
+	formatFsmContext,
 	extractHistoricalTraces,
 	extractMessageActivities,
 	evaluateLabeledTraces,
@@ -17,11 +18,56 @@ import {
 	predictFailure,
 	splitLabeledTraces,
 	predictNext,
+	continuationsFrom,
 	trainFailureModel,
 	replayTrace,
 	type TraceRecord,
 } from "../fsm.ts";
 import { TraceStore } from "../store.ts";
+import extension from "../index.ts";
+
+test("injects paper-style FSM context into the next model prompt", async () => {
+	const agentDir = await mkdtemp(join(tmpdir(), "pi-trace-fsm-agent-"));
+	const cwd = await mkdtemp(join(tmpdir(), "pi-trace-fsm-project-"));
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	try {
+		const handlers = new Map<string, (event?: any, ctx?: any) => Promise<any>>();
+		const commands = new Map<string, unknown>();
+		(extension as any)({
+			on: (name: string, handler: (event?: any, ctx?: any) => Promise<any>) => handlers.set(name, handler),
+			registerCommand: (name: string, command: unknown) => commands.set(name, command),
+		});
+		let leaf = 0;
+		const ctx: any = {
+			cwd,
+			hasUI: false,
+			sessionManager: {
+				getSessionId: () => "extension-test",
+				getLeafId: () => `leaf-${leaf}`,
+			},
+		};
+		await handlers.get("session_start")?.({}, ctx);
+		for (let index = 0; index < 5; index += 1) {
+			leaf = index;
+			await handlers.get("message_end")?.({ message: { role: "user", content: "task" } }, ctx);
+			await handlers.get("tool_call")?.({ toolName: "read", toolCallId: `read-${index}` }, ctx);
+			await handlers.get("tool_call")?.({ toolName: "bash", toolCallId: `bash-${index}` }, ctx);
+			await handlers.get("tool_call")?.({ toolName: "read", toolCallId: `read-again-${index}` }, ctx);
+			await handlers.get("agent_settled")?.();
+		}
+		assert.equal(commands.has("fsm-next"), true);
+		const result = await handlers.get("before_agent_start")?.({ systemPrompt: "base" });
+		assert.match(result.systemPrompt, /After the most recent action/);
+		assert.match(result.systemPrompt, /Common multi-step continuations/);
+		assert.match(result.systemPrompt, /tool:read → tool:bash/);
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		await rm(agentDir, { recursive: true, force: true });
+		await rm(cwd, { recursive: true, force: true });
+	}
+});
 
 test("extracts only stable activity symbols from Pi messages", () => {
 	assert.deepEqual(
@@ -194,6 +240,8 @@ test("evaluates labeled traces with reproducible holdouts and prefix metrics", (
 	if (!report.ok) return;
 	assert.equal(report.prefixes.length, 2);
 	assert.ok(report.prefixes.every((prefix) => prefix.replayFitness >= 0 && prefix.replayFitness <= 1));
+	assert.ok(report.prefixes.every((prefix) => prefix.nextStepAccuracy >= 0 && prefix.nextStepAccuracy <= 1));
+	assert.ok(report.prefixes[1]?.nextStepAccuracy !== undefined);
 
 	const predictions = evaluatePredictions([
 		{ outcome: "success", score: 0.1 },
@@ -234,6 +282,24 @@ test("calibrates a passive monitor from labels and explains triggered prefixes",
 
 	const healthy = inspectPrefix(model, traces[0], calibration.config);
 	assert.equal(healthy.triggered, false);
+});
+
+test("detects the paper's stuck-state monitor rule without blocking", () => {
+	const inspection = inspectPrefix(
+		buildModel([{ id: "training", activities: ["user:text", "tool:read"], outcome: "unknown" }]),
+		{ id: "live", activities: ["user:text", "tool:read", "tool:read", "tool:read", "tool:read"], outcome: "unknown" },
+		{
+			minActivities: 4,
+			minUniqueStates: 1,
+			cycleRateThreshold: Number.POSITIVE_INFINITY,
+			surpriseThreshold: Number.POSITIVE_INFINITY,
+			stuckRunLength: 4,
+		},
+	);
+	assert.equal(inspection.triggered, true);
+	assert.equal(inspection.rule, "stuck");
+	assert.equal(inspection.value, 4);
+	assert.equal(inspection.threshold, 4);
 });
 
 test("trains a deterministic labeled failure-risk model", () => {
@@ -286,22 +352,37 @@ test("filters one-off transitions unless they are the only continuation", () => 
 	assert.equal(model.transitions["tool:grep"]?.["tool:bash"]?.count, 1);
 });
 
-test("replays traces and ranks the filtered next action", () => {
-	const model = buildModel([
-		{ id: "1", activities: ["user:text", "tool:read", "tool:bash"], outcome: "unknown" },
-		{ id: "2", activities: ["user:text", "tool:read", "tool:bash"], outcome: "unknown" },
-	]);
+test("uses smoothed next-step probabilities and ranks observed continuations", () => {
+	const model = buildModel(
+		[
+			{ id: "1", activities: ["user:text", "tool:read", "tool:bash", "tool:read"], outcome: "unknown" },
+			{ id: "2", activities: ["user:text", "tool:read", "tool:bash", "tool:grep"], outcome: "unknown" },
+			{ id: "3", activities: ["user:text", "tool:read", "tool:write"], outcome: "unknown" },
+		],
+		{ minTransitionCount: 1, smoothingAlpha: 1, maxContinuationDepth: 3 },
+	);
 
-	assert.deepEqual(predictNext(model, "user:text", 3), [
-		{ activity: "tool:read", count: 2, probability: 1 },
+	const predictions = predictNext(model, "user:text", model.alphabet.length);
+	assert.equal(predictions[0]?.activity, "tool:read");
+	assert.ok((predictions[0]?.probability ?? 1) < 1);
+	assert.equal(predictions.reduce((total, prediction) => total + prediction.probability, 0), 1);
+	assert.equal(predictions.length, model.alphabet.length);
+
+	assert.deepEqual(continuationsFrom(model, "tool:read", 15), [
+		{ activities: ["tool:bash", "tool:grep"], count: 1 },
+		{ activities: ["tool:bash", "tool:read"], count: 1 },
 	]);
+	assert.match(formatFsmContext(model, "tool:read"), /After the most recent action/);
+	assert.match(formatFsmContext(model, "tool:read"), /\"tool:read\", past traces/);
+	assert.match(formatFsmContext(model, "tool:read"), /Common multi-step continuations/);
+	assert.match(formatFsmContext(model, "tool:read"), /tool:bash → tool:grep/);
 	assert.deepEqual(replayTrace(model, ["user:text", "tool:read", "tool:bash"]), {
 		consumed: 3,
 		novel: 0,
 		fitness: 1,
 	});
 	assert.equal(replayTrace(model, ["user:text", "tool:write"]).novel, 1);
-	assert.equal(model.transitions[START_STATE]?.["user:text"]?.count, 2);
+	assert.equal(model.transitions[START_STATE]?.["user:text"]?.count, 3);
 });
 
 test("inspects repeated activity without requiring labels", () => {

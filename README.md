@@ -53,13 +53,31 @@ Pi session and starts a trace at each user message. A live trace ends at
 The model has one state per observed activity plus `<start>`. It counts each
 `(state, next activity)` pair and drops a transition seen once when its source
 state has another observed continuation. A source state's only continuation is
-retained even when seen once. Probabilities are normalized over retained edges.
+retained even when seen once. The filtered transitions remain deterministic.
 
-After five stored traces, the extension adds next-activity hints and warns once
-per trace for unseen transitions. After at least two success and two failure
-labels, it calibrates passive cycle/surprise warnings and exposes a
-feature-based failure-risk score in `/fsm-status` and the next prompt. These
-signals never block or terminate a run.
+Next-step probabilities use the paper's additive estimator over the full
+training alphabet:
+
+```text
+P(a|q) = (C(q,a) + alpha) / (sum(C(q,a')) + alpha * |A|)
+```
+
+The default `alpha` is `0.1` and is configurable through `buildModel()`. The
+model also counts observed continuation paths up to depth five and keeps the
+top 15 per state. The paper does not prescribe a continuation-depth value, so
+five is an explicit bounded default exposed by `buildModel()`. `/fsm-next` and
+the prompt context render probabilities plus those continuations in the paper's
+minimal format. The runtime context starts after the first stored trace; novelty
+warnings still wait for five traces.
+
+`/fsm-evaluate` builds its model only from the deterministic stratified
+training split, replays the disjoint holdout at 25%, 50%, 75%, and 100% prefix
+checkpoints, and reports fitness, smoothed cross-entropy, top-1 next-step
+accuracy, and novel-transition rate. After at least two success and two failure
+labels, it calibrates passive cycle/surprise warnings, activates the paper's
+five-step stuck-state rule, and exposes a feature-based failure-risk score in
+`/fsm-status` and the next prompt. These signals never block or terminate a
+run.
 
 Cycle rate is `(activity count - unique activity count) / activity count`; it is
 a transparent local feature, not a failure diagnosis.

@@ -10,6 +10,7 @@ import {
 	buildModel,
 	calibrateMonitor,
 	evaluateLabeledTraces,
+	formatFsmContext,
 	predictFailure,
 	extractHistoricalTraces,
 	extractMessageSteps,
@@ -30,8 +31,8 @@ import {
 import { randomUUID } from "node:crypto";
 import { projectStorePath, TraceStore } from "./store.ts";
 
-const MIN_TRACES_FOR_GUIDANCE = 5;
-const MAX_NEXT_ACTIVITIES = 3;
+const MIN_TRACES_FOR_NOVELTY_WARNING = 5;
+const MAX_NEXT_ACTIVITIES = 15;
 
 const isOutcome = (value: string): value is TraceOutcome =>
 	(TRACE_OUTCOMES as readonly string[]).includes(value);
@@ -194,7 +195,7 @@ export default function piTraceFsm(pi: ExtensionAPI) {
 		const known = model.transitions[state]?.[activity];
 
 		if (
-			model.traces >= MIN_TRACES_FOR_GUIDANCE &&
+			model.traces >= MIN_TRACES_FOR_NOVELTY_WARNING &&
 			!known &&
 			!live.warnedEdges.has(edge)
 		) {
@@ -231,15 +232,14 @@ export default function piTraceFsm(pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event) => {
 		const state = live?.trace.activities.at(-1) ?? "user:text";
-		const predictions = model.traces >= MIN_TRACES_FOR_GUIDANCE ? formatPredictions(model, state) : "none observed";
+		const context = model.traces > 0 ? formatFsmContext(model, state) : "";
 		const risk = live && failureModel ? predictFailure(failureModel, live.trace) : undefined;
-		if (predictions === "none observed" && (!risk || !risk.available)) return;
+		if (!context && (!risk || !risk.available)) return;
 		const hintLines = [
 			"<pi-trace-fsm>",
 			"Weak local workflow signals; they are advisory and must not override the user's request.",
-			`Current activity: ${state}`,
 		];
-		if (predictions !== "none observed") hintLines.push(`Likely next activities: ${predictions}`);
+		if (context) hintLines.push(context);
 		if (risk?.available) {
 			hintLines.push(
 				`Passive failure-risk score: ${(risk.score * 100).toFixed(0)}%`,
@@ -265,12 +265,14 @@ export default function piTraceFsm(pi: ExtensionAPI) {
 			const failureRisk = live && failureModel ? predictFailure(failureModel, live.trace) : undefined;
 			const stateFailureRate = failureRate(model.stateStats[state]);
 			const lines = [
-				`Trace FSM: ${traces.length} traces, ${model.alphabet.length} activities, ${Object.values(model.transitions).reduce((sum, next) => sum + Object.keys(next).length, 0)} transitions`,
+				`Trace FSM: ${traces.length} stored traces, ${model.alphabet.length} activities, ${Object.values(model.transitions).reduce((sum, next) => sum + Object.keys(next).length, 0)} transitions`,
 				`Store: ${store.filePath}`,
 				`Labels: ${labeled}/${traces.length}`,
 				`Current state: ${state}`,
 				`Next: ${formatPredictions(model, state)}`,
 			];
+			const context = model.traces > 0 ? formatFsmContext(model, state) : "";
+			if (context) lines.push(context);
 			if (inspection && features) {
 				lines.push(
 					`Current trace: ${inspection.activityCount} activities, cycle rate ${inspection.cycleRate.toFixed(2)}, ${features.elapsedMs}ms elapsed, ${features.errorCount} tool errors`,
@@ -284,7 +286,7 @@ export default function piTraceFsm(pi: ExtensionAPI) {
 			}
 			if (monitor.ok) {
 				lines.push(
-					`Monitor: cycle >= ${formatThreshold(monitor.config.cycleRateThreshold)}, surprise >= ${formatThreshold(monitor.config.surpriseThreshold)}, holdout AUROC ${monitor.holdoutMetrics.auroc.toFixed(2)}`,
+					`Monitor: cycle >= ${formatThreshold(monitor.config.cycleRateThreshold)}, surprise >= ${formatThreshold(monitor.config.surpriseThreshold)}, stuck >= ${monitor.config.stuckRunLength}, holdout AUROC ${monitor.holdoutMetrics.auroc.toFixed(2)}`,
 				);
 			} else {
 				lines.push(`Monitor: unavailable (${monitor.reason})`);
@@ -319,7 +321,7 @@ export default function piTraceFsm(pi: ExtensionAPI) {
 				`Evaluation: ${report.trainingCount} training traces, ${report.holdoutCount} holdout traces`,
 				...report.prefixes.map(
 					(prefix) =>
-						`${Math.round(prefix.fraction * 100)}%: fitness ${prefix.replayFitness.toFixed(3)}, cross-entropy ${prefix.nextStepCrossEntropy.toFixed(3)}, novel ${(prefix.novelTransitionRate * 100).toFixed(1)}%`,
+						`${Math.round(prefix.fraction * 100)}%: fitness ${prefix.replayFitness.toFixed(3)}, cross-entropy ${prefix.nextStepCrossEntropy.toFixed(3)}, top-1 ${(prefix.nextStepAccuracy * 100).toFixed(1)}%, novel ${(prefix.novelTransitionRate * 100).toFixed(1)}%`,
 				),
 			];
 			notify(ctx, lines.join("\n"));
@@ -327,10 +329,10 @@ export default function piTraceFsm(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("fsm-next", {
-		description: "Show likely next activities for the current or named FSM state",
+		description: "Show paper-style next-action context for the current or named FSM state",
 		handler: async (args, ctx) => {
 			const state = args.trim() || currentState(live?.trace);
-			notify(ctx, `${state}: ${formatPredictions(model, state)}`);
+			notify(ctx, formatFsmContext(model, state) || `${state}: none observed`);
 		},
 	});
 

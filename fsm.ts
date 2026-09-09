@@ -45,14 +45,22 @@ export type StateStats = StateOutcomeCounts & {
 	traces: number;
 };
 
+export type Continuation = {
+	activities: Activity[];
+	count: number;
+};
+
 export type FsmModel = {
-	version: 1;
+	version: 2;
 	traces: number;
 	alphabet: Activity[];
 	states: string[];
 	transitions: Record<string, Record<string, Transition>>;
+	continuations: Record<string, Continuation[]>;
 	stateStats: Record<string, StateStats>;
 	minTransitionCount: number;
+	smoothingAlpha: number;
+	continuationDepth: number;
 };
 
 export type NextActivity = {
@@ -76,7 +84,17 @@ export type TraceInspection = {
 export type BuildModelOptions = {
 	/** Drop a transition seen fewer than this many times when alternatives exist. */
 	minTransitionCount?: number;
+	/** Additive smoothing parameter from the paper's next-step estimator. */
+	smoothingAlpha?: number;
+	/** Maximum number of activities in an observed continuation path. */
+	maxContinuationDepth?: number;
+	/** Number of continuation paths retained for each state. */
+	maxContinuations?: number;
 };
+
+export const DEFAULT_SMOOTHING_ALPHA = 0.1;
+export const DEFAULT_CONTINUATION_DEPTH = 5;
+export const DEFAULT_CONTINUATION_LIMIT = 15;
 
 function asRecord(value: unknown): RecordLike | undefined {
 	return value && typeof value === "object" ? (value as RecordLike) : undefined;
@@ -262,9 +280,63 @@ function filteredTransitions(
 	return filtered;
 }
 
+function continuationKey(activities: readonly Activity[]): string {
+	return JSON.stringify(activities);
+}
+
+function buildContinuations(
+	traces: readonly TraceRecord[],
+	transitions: Map<string, Map<string, number>>,
+	maxDepth: number,
+	limit: number,
+): Record<string, Continuation[]> {
+	const counts = new Map<string, Map<string, Continuation>>();
+	for (const trace of traces) {
+		const activities = trace.activities.filter((activity) => typeof activity === "string" && activity.length > 0);
+		for (let start = -1; start < activities.length; start += 1) {
+			const sourceState = start === -1 ? START_STATE : activities[start];
+			if (!sourceState) continue;
+			let state = sourceState;
+			const path: Activity[] = [];
+			const stateCounts = counts.get(sourceState) ?? new Map<string, Continuation>();
+			counts.set(sourceState, stateCounts);
+			for (let depth = 1; depth <= maxDepth; depth += 1) {
+				const activity = activities[start + depth];
+				if (!activity || !transitions.get(state)?.has(activity)) break;
+				path.push(activity);
+				state = activity;
+				if (path.length < 2) continue;
+				const key = continuationKey(path);
+				const continuation = stateCounts.get(key) ?? { activities: [...path], count: 0 };
+				continuation.count += 1;
+				stateCounts.set(key, continuation);
+			}
+		}
+	}
+
+	const result: Record<string, Continuation[]> = {};
+	for (const [state, stateCounts] of counts) {
+		result[state] = Array.from(stateCounts.values())
+			.sort(
+				(left, right) =>
+					right.count - left.count ||
+					left.activities.length - right.activities.length ||
+					continuationKey(left.activities).localeCompare(continuationKey(right.activities)),
+			)
+			.slice(0, limit)
+			.map((continuation) => ({ activities: [...continuation.activities], count: continuation.count }));
+	}
+	return result;
+}
+
 /** Build the deterministic directly-follows FSM described by the paper. */
 export function buildModel(traces: readonly TraceRecord[], options: BuildModelOptions = {}): FsmModel {
 	const minTransitionCount = Math.max(1, Math.floor(options.minTransitionCount ?? 2));
+	const smoothingAlpha = typeof options.smoothingAlpha === "number" && Number.isFinite(options.smoothingAlpha)
+		? Math.max(0, options.smoothingAlpha)
+		: DEFAULT_SMOOTHING_ALPHA;
+	const continuationDepth = Math.max(2, Math.floor(options.maxContinuationDepth ?? DEFAULT_CONTINUATION_DEPTH));
+	const continuationLimit = Math.max(1, Math.floor(options.maxContinuations ?? DEFAULT_CONTINUATION_LIMIT));
 	const rawTransitions = new Map<string, Map<string, number>>();
 	const stateStats = new Map<string, StateStats>();
 	const alphabet = new Set<Activity>();
@@ -304,24 +376,78 @@ export function buildModel(traces: readonly TraceRecord[], options: BuildModelOp
 	for (const activity of sortedAlphabet) serializedStats[activity] = stateStats.get(activity) ?? emptyStateStats();
 
 	return {
-		version: 1,
+		version: 2,
 		traces: traces.length,
 		alphabet: sortedAlphabet,
 		states: [START_STATE, ...sortedAlphabet],
 		transitions,
+		continuations: buildContinuations(traces, keptTransitions, continuationDepth, continuationLimit),
 		stateStats: serializedStats,
 		minTransitionCount,
+		smoothingAlpha,
+		continuationDepth,
 	};
 }
 
-/** Return the most likely outgoing activities for a model state. */
+function smoothedProbability(model: FsmModel, state: string, activity: Activity): number | undefined {
+	const successors = model.transitions[state];
+	if (!successors || model.alphabet.length === 0) return undefined;
+	const alpha = Math.max(0, model.smoothingAlpha ?? 0);
+	const observedTotal = Object.values(successors).reduce((total, transition) => total + transition.count, 0);
+	const count = successors[activity]?.count ?? 0;
+	if (alpha === 0 && count === 0) return 0;
+	return (count + alpha) / (observedTotal + alpha * model.alphabet.length);
+}
+
+/** Return additive-smoothed next-step probabilities from an FSM state. */
 export function predictNext(model: FsmModel, state: string, limit = 3): NextActivity[] {
 	const successors = model.transitions[state];
 	if (!successors || limit <= 0) return [];
-	return Object.entries(successors)
-		.map(([activity, transition]) => ({ activity, ...transition }))
-		.sort((left, right) => right.count - left.count || left.activity.localeCompare(right.activity))
+	const alpha = Math.max(0, model.smoothingAlpha ?? 0);
+	return model.alphabet
+		.map((activity) => ({
+			activity,
+			count: successors[activity]?.count ?? 0,
+			probability: smoothedProbability(model, state, activity) ?? 0,
+		}))
+		.filter((prediction) => alpha > 0 || prediction.count > 0)
+		.sort((left, right) => right.probability - left.probability || right.count - left.count || left.activity.localeCompare(right.activity))
 		.slice(0, Math.floor(limit));
+}
+
+/** Return observed multi-step continuations ranked by corpus frequency. */
+export function continuationsFrom(model: FsmModel, state: string, limit = DEFAULT_CONTINUATION_LIMIT): Continuation[] {
+	if (limit <= 0) return [];
+	return (model.continuations[state] ?? [])
+		.slice(0, Math.floor(limit))
+		.map((continuation) => ({ activities: [...continuation.activities], count: continuation.count }));
+}
+
+export type FsmContextOptions = {
+	nextActivityLimit?: number;
+	continuationLimit?: number;
+};
+
+/** Render the paper's minimal next-action context without exposing the full graph. */
+export function formatFsmContext(model: FsmModel, state: string, options: FsmContextOptions = {}): string {
+	const nextActivityLimit = Math.floor(options.nextActivityLimit ?? model.alphabet.length);
+	const predictions = predictNext(model, state, nextActivityLimit);
+	const continuations = continuationsFrom(model, state, options.continuationLimit ?? DEFAULT_CONTINUATION_LIMIT);
+	if (predictions.length === 0 && continuations.length === 0) return "";
+
+	const lines = [
+		"After the most recent action",
+		`\"${state}\", past traces`,
+		"show these next actions:",
+		...predictions.map((prediction) => `- ${prediction.activity}: ${(prediction.probability * 100).toFixed(1)}%`),
+	];
+	if (continuations.length > 0) {
+		lines.push(
+			"Common multi-step continuations:",
+			...continuations.map((continuation) => `- ${continuation.activities.join(" → ")} (${continuation.count}x)`),
+		);
+	}
+	return lines.join("\n");
 }
 
 /** Replay a partial or complete activity sequence against the filtered FSM. */
@@ -408,7 +534,7 @@ function traceSteps(trace: TraceRecord): TraceStep[] {
 	return trace.activities.map((activity) => ({ activity }));
 }
 
-function maxConsecutiveRatio(activities: readonly Activity[]): number {
+function maxConsecutiveCount(activities: readonly Activity[]): number {
 	if (activities.length === 0) return 0;
 	let longest = 1;
 	let current = 1;
@@ -416,7 +542,11 @@ function maxConsecutiveRatio(activities: readonly Activity[]): number {
 		current = activities[index] === activities[index - 1] ? current + 1 : 1;
 		longest = Math.max(longest, current);
 	}
-	return longest / activities.length;
+	return longest;
+}
+
+function maxConsecutiveRatio(activities: readonly Activity[]): number {
+	return activities.length === 0 ? 0 : maxConsecutiveCount(activities) / activities.length;
 }
 
 function mean(values: readonly number[]): number {
@@ -428,7 +558,7 @@ function transitionSurprises(model: FsmModel | undefined, activities: readonly A
 	let state = START_STATE;
 	const surprises: number[] = [];
 	for (const activity of activities) {
-		const probability = model.transitions[state]?.[activity]?.probability;
+		const probability = smoothedProbability(model, state, activity);
 		surprises.push(probability && probability > 0 ? -Math.log2(probability) : NOVEL_TRANSITION_SURPRISE_BITS);
 		state = activity;
 	}
@@ -501,7 +631,7 @@ export function extractTraceFeatures(trace: TraceRecord, model?: FsmModel): Trac
 	if (model && model.traces > 0) {
 		let state = START_STATE;
 		for (const activity of activities) {
-			probabilities.push(model.transitions[state]?.[activity]?.probability ?? 0);
+			probabilities.push(smoothedProbability(model, state, activity) ?? 0);
 			state = activity;
 		}
 	}
@@ -603,6 +733,7 @@ export type PrefixEvaluation = {
 	fraction: number;
 	replayFitness: number;
 	nextStepCrossEntropy: number;
+	nextStepAccuracy: number;
 	novelTransitionRate: number;
 };
 
@@ -619,6 +750,35 @@ export type TraceEvaluationOptions = SplitOptions & {
 	prefixFractions?: readonly number[];
 };
 
+export type NextStepScore = {
+	correct: number;
+	total: number;
+	accuracy: number;
+	crossEntropy: number;
+};
+
+/** Score each activity against the smoothed distribution from its preceding state. */
+export function scoreNextSteps(model: FsmModel, activities: readonly Activity[]): NextStepScore {
+	let state = START_STATE;
+	let correct = 0;
+	let total = 0;
+	let surpriseTotal = 0;
+	for (const activity of activities) {
+		const probability = smoothedProbability(model, state, activity) ?? 0;
+		if (predictNext(model, state, 1)[0]?.activity === activity) correct += 1;
+		if (probability > 0) surpriseTotal += -Math.log2(probability);
+		else surpriseTotal += NOVEL_TRANSITION_SURPRISE_BITS;
+		total += 1;
+		state = activity;
+	}
+	return {
+		correct,
+		total,
+		accuracy: total === 0 ? 0 : correct / total,
+		crossEntropy: total === 0 ? 0 : surpriseTotal / total,
+	};
+}
+
 /** Evaluate held-out replay and surprise metrics at deterministic prefix checkpoints. */
 export function evaluateLabeledTraces(
 	traces: readonly TraceRecord[],
@@ -634,20 +794,28 @@ export function evaluateLabeledTraces(
 	for (const fraction of fractions) {
 		const values = split.holdout.map((trace) => {
 			const prefix = prefixTrace(trace, fraction);
-			const features = extractTraceFeatures(prefix, model);
+			const score = scoreNextSteps(model, prefix.activities);
 			const replay = replayTrace(model, prefix.activities);
 			return {
-				fitness: features.replayFitness,
-				crossEntropy: features.traceCrossEntropy,
+				fitness: replay.fitness,
+				crossEntropy: score.crossEntropy,
+				nextStepAccuracy: score.accuracy,
+				nextStepCount: score.total,
+				correct: score.correct,
 				novel: replay.novel,
 				activityCount: prefix.activities.length,
 			};
 		});
 		const activityCount = values.reduce((total, value) => total + value.activityCount, 0);
+		const nextStepCount = values.reduce((total, value) => total + value.nextStepCount, 0);
 		prefixes.push({
 			fraction,
 			replayFitness: mean(values.map((value) => value.fitness)),
-			nextStepCrossEntropy: mean(values.map((value) => value.crossEntropy)),
+			nextStepCrossEntropy:
+				nextStepCount === 0
+					? 0
+					: values.reduce((total, value) => total + value.crossEntropy * value.nextStepCount, 0) / nextStepCount,
+			nextStepAccuracy: nextStepCount === 0 ? 0 : values.reduce((total, value) => total + value.correct, 0) / nextStepCount,
 			novelTransitionRate: activityCount === 0 ? 0 : values.reduce((total, value) => total + value.novel, 0) / activityCount,
 		});
 	}
@@ -742,12 +910,13 @@ export type MonitorConfig = {
 	minUniqueStates: number;
 	cycleRateThreshold: number;
 	surpriseThreshold: number;
+	stuckRunLength: number;
 };
 
 export type MonitorInspection = {
 	triggered: boolean;
 	state: string;
-	rule?: "cycle-rate" | "surprise";
+	rule?: "cycle-rate" | "surprise" | "stuck";
 	value?: number;
 	threshold?: number;
 	features: TraceFeatures;
@@ -756,6 +925,7 @@ export type MonitorInspection = {
 export type MonitorCalibrationOptions = SplitOptions & {
 	minActivities?: number;
 	minUniqueStates?: number;
+	stuckRunLength?: number;
 };
 
 export type MonitorCalibration =
@@ -808,11 +978,12 @@ export function calibrateMonitor(
 	if (!split.ok) return split;
 	const model = buildModel(split.training);
 	const trainingFeatures = split.training.map((trace) => ({ trace, features: extractTraceFeatures(trace, model) }));
-	const defaultMinActivities = Math.max(1, Math.floor(median(trainingFeatures.map(({ features }) => features.activityCount)) * 0.25));
+	const defaultMinActivities = Math.max(1, Math.ceil(mean(trainingFeatures.map(({ features }) => features.activityCount)) * 0.1));
 	const defaultMinUniqueStates = Math.max(1, Math.floor(median(trainingFeatures.map(({ features }) => features.uniqueStateCount)) * 0.5));
 	const config: MonitorConfig = {
 		minActivities: Math.max(1, Math.floor(options.minActivities ?? defaultMinActivities)),
 		minUniqueStates: Math.max(1, Math.floor(options.minUniqueStates ?? defaultMinUniqueStates)),
+		stuckRunLength: Math.max(2, Math.floor(options.stuckRunLength ?? 5)),
 		cycleRateThreshold: selectThreshold(
 			trainingFeatures.map(({ trace, features }) => ({ outcome: trace.outcome as "success" | "failure", score: features.cycleRate })),
 		),
@@ -846,6 +1017,17 @@ export function inspectPrefix(
 ): MonitorInspection {
 	const features = extractTraceFeatures(trace, model);
 	const state = trace.activities.at(-1) ?? START_STATE;
+	const longestRun = maxConsecutiveCount(trace.activities);
+	if (features.activityCount >= config.minActivities && longestRun >= config.stuckRunLength) {
+		return {
+			triggered: true,
+			state,
+			rule: "stuck",
+			value: longestRun,
+			threshold: config.stuckRunLength,
+			features,
+		};
+	}
 	if (features.activityCount < config.minActivities || features.uniqueStateCount < config.minUniqueStates) {
 		return { triggered: false, state, features };
 	}
