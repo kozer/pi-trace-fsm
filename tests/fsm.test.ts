@@ -57,10 +57,14 @@ test("injects paper-style FSM context into the next model prompt", async () => {
 			await handlers.get("agent_settled")?.();
 		}
 		assert.equal(commands.has("fsm-next"), true);
-		const result = await handlers.get("before_agent_start")?.({ systemPrompt: "base" });
-		assert.match(result.systemPrompt, /After the most recent action/);
-		assert.match(result.systemPrompt, /Common multi-step continuations/);
-		assert.match(result.systemPrompt, /tool:read → tool:bash/);
+		const event = { systemPrompt: "base", systemPromptOptions: { sections: {} as Record<string, string> } };
+		const result = await handlers.get("before_agent_start")?.(event);
+		// A forced systemPrompt would freeze the prompt and drop sections later handlers add.
+		assert.equal(result?.systemPrompt, undefined);
+		const section = event.systemPromptOptions.sections["pi-trace-fsm"];
+		assert.match(section, /After the most recent action/);
+		assert.match(section, /Common multi-step continuations/);
+		assert.match(section, /tool:read → tool:bash/);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

@@ -33,6 +33,7 @@ import { projectStorePath, TraceStore } from "./store.ts";
 
 const MIN_TRACES_FOR_NOVELTY_WARNING = 5;
 const MAX_NEXT_ACTIVITIES = 15;
+const PROMPT_SECTION = "pi-trace-fsm";
 
 const isOutcome = (value: string): value is TraceOutcome =>
 	(TRACE_OUTCOMES as readonly string[]).includes(value);
@@ -230,15 +231,18 @@ export default function piTraceFsm(pi: ExtensionAPI) {
 		}
 	});
 
+	// A named section rather than a returned systemPrompt: a returned prompt is sent verbatim and
+	// drops the sections that handlers running later add, such as pi's mcp_servers.
 	pi.on("before_agent_start", async (event) => {
+		const sections = event.systemPromptOptions.sections;
 		const state = live?.trace.activities.at(-1) ?? "user:text";
 		const context = model.traces > 0 ? formatFsmContext(model, state) : "";
 		const risk = live && failureModel ? predictFailure(failureModel, live.trace) : undefined;
-		if (!context && (!risk || !risk.available)) return;
-		const hintLines = [
-			"<pi-trace-fsm>",
-			"Weak local workflow signals; they are advisory and must not override the user's request.",
-		];
+		if (!context && (!risk || !risk.available)) {
+			delete sections[PROMPT_SECTION];
+			return;
+		}
+		const hintLines = ["Weak local workflow signals; they are advisory and must not override the user's request."];
 		if (context) hintLines.push(context);
 		if (risk?.available) {
 			hintLines.push(
@@ -246,8 +250,8 @@ export default function piTraceFsm(pi: ExtensionAPI) {
 				`Strongest signals: ${formatFailureContributions(risk)}`,
 			);
 		}
-		hintLines.push("</pi-trace-fsm>");
-		return { systemPrompt: `${event.systemPrompt}\n\n${hintLines.join("\n")}` };
+		// pi wraps the section in <pi-trace-fsm> tags.
+		sections[PROMPT_SECTION] = hintLines.join("\n");
 	});
 
 	pi.registerCommand("fsm-status", {
