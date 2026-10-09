@@ -195,14 +195,38 @@ function resultDetails(message: unknown): { toolCallId?: string; isError: boolea
 	};
 }
 
+/**
+ * Infer a run's outcome from how its last assistant message stopped: an interrupted or
+ * failed run is a failure, a normal stop is a success, anything else stays unknown.
+ */
+export function inferOutcome(stopReason: unknown): TraceOutcome {
+	if (stopReason === "aborted" || stopReason === "error") return "failure";
+	if (stopReason === "stop") return "success";
+	return "unknown";
+}
+
+/** Return the stop reason of a persisted assistant message, if it has one. */
+export function assistantStopReason(message: unknown): string | undefined {
+	const value = asRecord(message);
+	if (!value || value.role !== "assistant") return undefined;
+	return typeof value.stopReason === "string" ? value.stopReason : undefined;
+}
+
 /** Extract one trace for each user message from an active session branch. */
 export function extractHistoricalTraces(entries: SessionEntryLike[], sessionId: string): TraceRecord[] {
 	const traces: TraceRecord[] = [];
 	let current: TraceRecord | undefined;
 	let pendingToolSteps = new Map<string, number>();
+	let stopReason: string | undefined;
+	const close = () => {
+		if (!current) return;
+		current.outcome = inferOutcome(stopReason);
+		traces.push(current);
+	};
 
 	for (const entry of entries) {
 		if (entry.type !== "message") continue;
+		stopReason = assistantStopReason(entry.message) ?? stopReason;
 		const result = resultDetails(entry.message);
 		if (result) {
 			if (current && result.isError) {
@@ -220,7 +244,8 @@ export function extractHistoricalTraces(entries: SessionEntryLike[], sessionId: 
 		if (steps.length === 0) continue;
 
 		if (steps[0]?.activity === "user:text") {
-			if (current) traces.push(current);
+			close();
+			stopReason = undefined;
 			current = {
 				id: `${sessionId}:${entry.id}`,
 				activities: [],
@@ -243,7 +268,7 @@ export function extractHistoricalTraces(entries: SessionEntryLike[], sessionId: 
 			if (step.toolCallId) pendingToolSteps.set(step.toolCallId, current.steps!.length - 1);
 		}
 	}
-	if (current) traces.push(current);
+	close();
 	return traces;
 }
 

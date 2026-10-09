@@ -5,6 +5,25 @@ agent traces. It is a small, dependency-free implementation of the core FSM
 construction described in [*Automata from Agent Traces: Failure and Next-Step
 Prediction*](https://arxiv.org/abs/2608.23670).
 
+## Status: retired (2026-10-09)
+
+Historical traces now get an outcome from the last assistant stop reason
+(`aborted`/`error` → failure, `stop` → success). That labelled 10,914 of 12,187
+local traces (1,530 failures) and allowed the failure model to be evaluated on
+holdouts (four largest projects, three seeds each):
+
+| prefix of trace | failure-risk AUROC | baseline: shorter = failure |
+| --- | --- | --- |
+| 25% | 0.45–0.60 | 0.49–0.65 |
+| 50% | 0.49–0.65 | 0.48–0.67 |
+| 100% | 0.85–0.97 | 0.51–0.69 |
+
+The full-trace score is leakage: 1,509 of 1,530 failures end on something
+other than assistant text, against 5 of 9,384 successes, so the model is
+reading the interruption itself. On prefixes, where a warning could still help,
+the risk score does not beat run length. The extension was removed from the
+author's pi setup on that result.
+
 ## Install
 
 Try it for one run:

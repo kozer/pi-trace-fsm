@@ -147,6 +147,25 @@ test("splits historical entries at user messages and ignores tool results", () =
 	]);
 });
 
+test("infers each historical trace's outcome from its last stop reason", () => {
+	const user = (id: string) => ({ type: "message", id, message: { role: "user", content: "go" } });
+	const assistant = (id: string, stopReason: string) => ({
+		type: "message",
+		id,
+		message: { role: "assistant", stopReason, content: [{ type: "text", text: "ok" }] },
+	});
+	const traces = extractHistoricalTraces(
+		[
+			user("u1"), assistant("a1", "toolUse"), assistant("a2", "stop"),
+			user("u2"), assistant("a3", "aborted"),
+			user("u3"), assistant("a4", "error"),
+			user("u4"), assistant("a5", "length"),
+		],
+		"s",
+	);
+	assert.deepEqual(traces.map((trace) => trace.outcome), ["success", "failure", "failure", "unknown"]);
+});
+
 test("extracts deterministic privacy-preserving FSM risk features", () => {
 	const traces: TraceRecord[] = [
 		{
